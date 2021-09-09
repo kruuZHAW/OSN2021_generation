@@ -13,6 +13,7 @@ import numpy as np
 import scipy as  sp
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
+from scipy.spatial.distance import cdist
 
 #Generated data
 X_raw = pd.read_pickle("Data/X_raw.pkl")
@@ -30,7 +31,7 @@ perpendiculars = pd.read_parquet("Data/Normals_sampling.parquet")
 perpendiculars["angle"] = np.arctan(perpendiculars.m)
 
 def mahalanobis(x=None, data=None, cov=None):
-    """Compute the Mahalanobis Distance between each row of x and the data  
+    """Compute the Mahalanobis Distance between each row of x and the mean of the data  
     x    : vector or matrix of data with, say, p columns.
     data : ndarray of the distribution from which Mahalanobis distance of each observation of x is to be computed.
     cov  : covariance matrix (p x p) of the distribution. If None, will be computed from data.
@@ -42,6 +43,17 @@ def mahalanobis(x=None, data=None, cov=None):
     left_term = np.dot(x_minus_mu, inv_covmat)
     mahal = np.dot(left_term, x_minus_mu.T)
     return mahal.diagonal()
+
+def energy_distance(x, y):
+    """Compute energy distance between the distributions of 2 samples of different length
+    """
+    n1 = x.shape[0]
+    n2 = y.shape[0]
+    a = cdist(x, y, "euclidean").mean()
+    b = cdist(x, x, "euclidean").mean()
+    c = cdist(y, y, "euclidean").mean()
+    e = (n1 * n2 / (n1 + n2)) * (2 * a - b - c)
+    return e
 
 # Signed curvature
 def curvature(x, y):
@@ -93,9 +105,12 @@ def fit_spline(df, name_png, sampled = True, n_display = 400):
         spline_x.append(cs(xs)[:, 0])
         spline_y.append(cs(xs)[:, 1])
 
-        ax.plot(y[:, 0], y[:, 1], "o", label="data", color=col)
-        ax.plot(cs(xs)[:, 0], cs(xs)[:, 1], label="spline", color=col)
-        
+        if i % 40 == 0:
+            ax.plot(y[:, 0], y[:, 1], "o", ms = 2, label="data", color=col)
+            ax.plot(cs(xs)[:, 0], cs(xs)[:, 1], label="spline", color=col)
+        else : 
+            ax.plot(cs(xs)[:, 0], cs(xs)[:, 1], label="spline", color="grey", alpha = 0.2)
+            
     plot_name = 'Plots/splines_' + name_png + '.png'
     plt.savefig(plot_name)
     plt.close()
@@ -103,6 +118,7 @@ def fit_spline(df, name_png, sampled = True, n_display = 400):
 
 def mean_turns(spline_x, spline_y, threshold = 0.00015):
     nb_turns = []
+    prop_turns = []
     for i in range(len(spline_x)):
         indexes1 = np.where(curvature(spline_x[i], spline_y[i]) > threshold)
         indexes2 = np.where(curvature(spline_x[i], spline_y[i]) < -threshold)
@@ -112,8 +128,11 @@ def mean_turns(spline_x, spline_y, threshold = 0.00015):
             + np.sum(np.diff(indexes2[0], 1) != 1)
             + 1
         )
+        prop_turns.append(len(indexes1[0])*0.001 + len(indexes2[0])*0.001)
 
-    return np.array(nb_turns).mean()
+
+
+    return np.array(nb_turns).mean(), np.array( prop_turns).mean()
 
 def plot_raw_trajs(df, name_png, sampled = True, n_display = 400):
     rand = np.random.choice(range(len(df)), n_display, replace=False)
@@ -177,46 +196,59 @@ def plot_turns(spline_x, spline_y, name_png, i, threshold = 0.00015):
     return None
 
 #Plot generation
-display = 20
+display = 400
+threshold = 0.00010
 
 plot_raw_trajs(Real, "Real", sampled = True, n_display = display)
 spline_x, spline_y = fit_spline(Real, "Real", sampled = True, n_display = display)
-plot_turns(spline_x, spline_y, "Real", 10, threshold = 0.00010)
-print("Real :", mean_turns(spline_x, spline_y, threshold = 0.00010), "\n")
+plot_turns(spline_x, spline_y, "Real", 10, threshold = threshold)
+print("Real :", mean_turns(spline_x, spline_y, threshold = threshold), "\n")
 
 
 plot_raw_trajs(Vines_samp, "Vines_samp", sampled = True, n_display = display)
 spline_x, spline_y = fit_spline(Vines_samp, "Vines_samp", sampled = True, n_display = display)
-plot_turns(spline_x, spline_y, "Vines_samp", 10, threshold = 0.00010)
-print("Vines and Samp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Vines_samp, data=Real)), "\n")
+plot_turns(spline_x, spline_y, "Vines_samp", 10, threshold = threshold)
+print("Vines and Samp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean:", np.mean(mahalanobis(x=Vines_samp, data=Real)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Vines_samp), np.array(Real), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Vines_samp), np.array(Real)), "\n")
 
 plot_raw_trajs(Gm_samp, "Gm_samp", sampled = True, n_display = display)
 spline_x, spline_y = fit_spline(Gm_samp, "Gm_samp", sampled = True, n_display = display)
-plot_turns(spline_x, spline_y, "Gm_samp", 10, threshold = 0.00010)
-print("GM and Samp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Gm_samp, data=Real)), "\n")
+plot_turns(spline_x, spline_y, "Gm_samp", 10, threshold = threshold)
+print("GM and Samp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean :", np.mean(mahalanobis(x=Gm_samp, data=Real)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Gm_samp), np.array(Real), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Gm_samp), np.array(Real)), "\n")
 
 plot_raw_trajs(Mvn_samp, "Mvn_samp", sampled = True, n_display = display)
 spline_x, spline_y = fit_spline(Mvn_samp, "Mvn_samp", sampled = True, n_display = display)
-plot_turns(spline_x, spline_y, "Mvn_samp", 10, threshold = 0.00010)
-print("MVN and Samp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Mvn_samp, data=Real)), "\n")
+plot_turns(spline_x, spline_y, "Mvn_samp", 10, threshold = threshold)
+print("MVN and Samp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean :", np.mean(mahalanobis(x=Mvn_samp, data=Real)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Mvn_samp), np.array(Real), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Mvn_samp), np.array(Real)), "\n")
 
 plot_raw_trajs(Vines_Wsamp, "Vines_Wsamp", sampled = False, n_display = display)
 spline_x, spline_y = fit_spline(Vines_Wsamp, "Vines_Wsamp", sampled = False, n_display = display)
-plot_turns(spline_x, spline_y, "Vines_Wsamp", 10, threshold = 0.00010)
-print("Vines without Samp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Vines_Wsamp, data=X_raw)), "\n")
+plot_turns(spline_x, spline_y, "Vines_Wsamp", 10, threshold = threshold)
+print("Vines without Samp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean :", np.mean(mahalanobis(x=Vines_Wsamp, data=X_raw)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Vines_Wsamp), np.array(X_raw), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Vines_Wsamp), np.array(X_raw)), "\n")
 
 plot_raw_trajs(Gm_Wsamp, "Gm_Wsamp", sampled = False, n_display = display)
 spline_x, spline_y = fit_spline(Gm_Wsamp, "Gm_Wsamp", sampled = False, n_display = display)
-plot_turns(spline_x, spline_y, "Gm_Wsamp", 10, threshold = 0.00010)
-print("Gm_Wsamp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Gm_Wsamp, data=X_raw)), "\n")
+plot_turns(spline_x, spline_y, "Gm_Wsamp", 10, threshold = threshold)
+print("Gm_Wsamp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean:", np.mean(mahalanobis(x=Gm_Wsamp, data=X_raw)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Gm_Wsamp), np.array(X_raw), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Gm_Wsamp), np.array(X_raw)), "\n")
 
 plot_raw_trajs(Mvn_Wsamp, "Mvn_Wsamp", sampled = False, n_display = display)
 spline_x, spline_y = fit_spline(Mvn_Wsamp, "Mvn_Wsamp", sampled = False, n_display = display)
-plot_turns(spline_x, spline_y, "Mvn_Wsamp", 10, threshold = 0.00010)
-print("Mvn_Wsamp :", mean_turns(spline_x, spline_y, threshold = 0.00010))
-print("Mahalanobis distance :", np.mean(mahalanobis(x=Mvn_Wsamp, data=X_raw)), "\n")
+plot_turns(spline_x, spline_y, "Mvn_Wsamp", 10, threshold = threshold)
+print("Mvn_Wsamp :", mean_turns(spline_x, spline_y, threshold = threshold))
+print("Mahalanobis distance to mean :", np.mean(mahalanobis(x=Mvn_Wsamp, data=X_raw)))
+print("Mean Mahalanobis distance to every real trajectories:", cdist(np.array(Mvn_Wsamp), np.array(X_raw), "mahalanobis").mean())
+print("Energy distance : ", energy_distance(np.array(Mvn_Wsamp), np.array(X_raw)), "\n")
