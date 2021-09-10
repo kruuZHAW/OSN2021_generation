@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import scipy as  sp
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 from scipy.interpolate import CubicSpline
 from scipy.spatial.distance import cdist
 
@@ -138,26 +139,49 @@ def plot_raw_trajs(df, name_png, sampled = True, n_display = 400):
     rand = np.random.choice(range(len(df)), n_display, replace=False)
     gen_x, calc_y = reconstruct_trajs(df.loc[rand], sampled = sampled)
 
+    alphas = np.ones(n_display)*0.1
+    idx = np.random.choice(n_display, 5, replace=False)
+    alphas[idx] = 1
+    rgba_colors = np.zeros((n_display,4))
+    rgba_colors[:,0] = 0.7
+    rgba_colors[:,1] = 0.7
+    rgba_colors[:,2] = 0.7
+    rgba_colors[:,3] = alphas
+    rgba_colors[idx,:3] = [0,0,1]
+    xaxis = np.array([np.arange(gen_x.shape[1]),] * gen_x.shape[0])
+    rgba_scatter = np.ravel([rgba_colors]*gen_x.shape[1], order="F").reshape((4, n_display*gen_x.shape[1])).T
+
     plt.figure(figsize=(15, 10))
     plt.subplot(221)
-    plt.plot(gen_x.T)
+    #plt.plot(gen_x.T)
+    segs = np.stack((xaxis, gen_x), axis=2)
+    lc = LineCollection(segs, colors=rgba_colors)
+    plt.gca().add_collection(lc)
+    plt.autoscale()
     plt.title("Generated x")
 
     plt.subplot(222)
-    plt.plot(calc_y.T)
+    #plt.plot(calc_y.T)
+    segs = np.stack((xaxis, calc_y), axis=2)
+    lc = LineCollection(segs, colors=rgba_colors)
+    plt.gca().add_collection(lc)
+    plt.autoscale()
     plt.title("Calculated y")
 
     plt.subplot(223)
     plt.title("Generated trajectory")
-    plt.plot(
-        gen_x.T, calc_y.T,
-    )
+    segs = np.stack((gen_x, calc_y), axis=2)
+    lc = LineCollection(segs, colors=rgba_colors)
+    plt.gca().add_collection(lc)
+    plt.autoscale()
+    #plt.plot(
+    #    gen_x.T, calc_y.T,
+    #)
 
     plt.subplot(224)
     plt.title("Generated points")
     plt.scatter(
-        gen_x.T, calc_y.T,
-    )
+        gen_x, calc_y, color =  rgba_scatter)
     plt.scatter(perpendiculars.x.values, perpendiculars.y.values, color="r")
 
     plot_name = 'Plots/Raw_trajectories_' + name_png + '.png'
