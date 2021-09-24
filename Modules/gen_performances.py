@@ -63,7 +63,7 @@ def plot_metrics(metrics, names = ["Energy", "Mahala_to_mean", "Mean_mahala"] ):
     r1 = np.arange(len(names))
 
     #colors
-    col = ["papayawhip", "moccasin", "orange", "lightgreen", "darkseagreen", "forestgreen"]
+    col = ["lightsalmon", "coral", "lightgreen", "darkseagreen", "lightskyblue", "steelblue"]
 
     # Make the plot
     for i, key in enumerate(norm) : 
