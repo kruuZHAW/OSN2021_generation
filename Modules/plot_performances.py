@@ -11,6 +11,7 @@ import os
 import pandas as pd
 import numpy as np
 import scipy as  sp
+import json
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 from tqdm.autonotebook import tqdm
@@ -20,6 +21,9 @@ import pyvinecopulib as pv
 
 X_raw = pd.read_pickle("Data/X_raw.pkl")
 X_along_lines = pd.read_pickle("Data/distributions_along_lines.pkl")
+
+#re-run the generation or not
+simulation = False
 
 def mahalanobis(x=None, data=None, cov=None):
     """Compute the Mahalanobis Distance between each row of x and the mean of the data  
@@ -168,21 +172,27 @@ def Vine_perf(data, mat, n_sim, n_sample):
     
     return [np.mean(energies), np.mean(mahala_to_mean), np.mean(mean_mahala)]
 
-metrics = {}
+if simulation : 
+    metrics = {}
 
-metrics["MVN_raw"] = MVN_perf(X_raw, 100, 1000)
-print("Performances MVN without Sampling : ", metrics["MVN_raw"])
-metrics["MVN_reduced"] = MVN_perf(X_along_lines, 100, 1000)
-print("Performances MVN with Sampling : ", metrics["MVN_reduced"], "\n")
+    metrics["MVN_raw"] = MVN_perf(X_raw, 100, 1000)
+    print("Performances MVN without Sampling : ", metrics["MVN_raw"])
+    metrics["MVN_reduced"] = MVN_perf(X_along_lines, 100, 1000)
+    print("Performances MVN with Sampling : ", metrics["MVN_reduced"], "\n")
 
-metrics["GM_raw"] = GM_perf(X_raw, 40, 100, 1000)
-print("Performances GM without Sampling : ", metrics["GM_raw"])
-metrics["GM_reduced"] = GM_perf(X_along_lines, 20, 100, 1000)
-print("Performances GM with Sampling : ", metrics["GM_reduced"], "\n")
+    metrics["GM_raw"] = GM_perf(X_raw, 40, 100, 1000)
+    print("Performances GM without Sampling : ", metrics["GM_raw"])
+    metrics["GM_reduced"] = GM_perf(X_along_lines, 20, 100, 1000)
+    print("Performances GM with Sampling : ", metrics["GM_reduced"], "\n")
 
-metrics["Vines_raw"] = Vine_perf(X_raw, True, 100, 1000)
-print("Performances Vines without Sampling : ", metrics["Vines_raw"])
-metrics["Vines_reduced"] = Vine_perf(X_along_lines, True, 100, 1000)
-print("Performances Vines with Sampling : ", metrics["Vines_reduced"], "\n")
+    metrics["Vines_raw"] = Vine_perf(X_raw, True, 100, 1000)
+    print("Performances Vines without Sampling : ", metrics["Vines_raw"])
+    metrics["Vines_reduced"] = Vine_perf(X_along_lines, True, 100, 1000)
+    print("Performances Vines with Sampling : ", metrics["Vines_reduced"], "\n")
 
-plot_metrics(metrics)
+    json.dump( metrics, open( "Data/metrics.json", 'w' ) )
+    plot_metrics(metrics)
+
+else :
+    metrics = json.load( open( "Data/metrics.json" ) )
+    plot_metrics(metrics)
