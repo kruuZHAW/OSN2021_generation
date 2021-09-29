@@ -19,11 +19,35 @@ from sklearn.mixture import GaussianMixture
 import openturns as ot
 import pyvinecopulib as pv
 
-X_raw = pd.read_pickle("Data/X_raw.pkl")
+from traffic.core import Traffic
+
+#Trajectories projected
 X_along_lines = pd.read_pickle("Data/distributions_along_lines.pkl")
 
+#trajectories not resampled
+X_not_sampled = pd.read_pickle("Data/X_raw.pkl")
+
+# traffic resampled
+t_resampled = Traffic.from_file("Data/GA_resampled.parquet")
+features = ["x", "y"]
+X_sampled = pd.DataFrame(np.stack(list(f.data[features].values.ravel() for f in t_resampled)))
+
+# Normals for sampling
+perpendiculars = pd.read_parquet("Data/Normals_sampling.parquet")
+perpendiculars["angle"] = np.arctan(perpendiculars.m)
+
 #re-run the generation or not
-simulation = False
+simulation = True
+
+def inverse_sampling(df):
+    n_gen = df.shape[0]
+    n_feat = df.shape[1]
+    res = np.zeros((n_gen, n_feat*2))
+    res[:,0::2] = np.array(df) * np.array([np.cos(perpendiculars.angle.values),] * n_gen) + np.array(
+    [perpendiculars.x.values,] * n_gen
+    )
+    res[:,1::2] = perpendiculars.m.values * res[:,0::2] + perpendiculars.p.values
+    return res
 
 def mahalanobis(x=None, data=None, cov=None):
     """Compute the Mahalanobis Distance between each row of x and the mean of the data  
@@ -88,7 +112,7 @@ def plot_metrics(metrics, names = ["Energy", "Mahala_to_mean", "Mean_mahala"] ):
     plt.close()
     return None
 
-def MVN_perf(data, n_sim, n_sample):
+def MVN_perf(data, data_eval, n_sim, n_sample, reduced = False):
     """
     Evaluate performances metrics for MVN generation over n_sim generations
     of n_sample samples
@@ -98,15 +122,19 @@ def MVN_perf(data, n_sim, n_sample):
     mean_mahala = []
 
     for _ in tqdm(range(n_sim), leave=False):
+
         x_sim = np.random.multivariate_normal(np.mean(data), np.cov(data.T), n_sample)
 
-        energies.append(energy_distance(x_sim, np.array(data)))
-        mean_mahala.append(cdist(x_sim, np.array(data), "mahalanobis").mean())
-        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data)))
+        if reduced :
+            x_sim = inverse_sampling(x_sim)     
+            
+        energies.append(energy_distance(x_sim, np.array(data_eval)))
+        mean_mahala.append(cdist(x_sim, np.array(data_eval), "mahalanobis").mean())
+        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data_eval)))
     
     return [np.mean(energies), np.mean(mahala_to_mean), np.mean(mean_mahala)]
 
-def GM_perf(data, n_components, n_sim, n_sample):
+def GM_perf(data,  data_eval, n_components, n_sim, n_sample, reduced = False):
     """
     Evaluate performances metrics for Gaussian Mixture generation over n_sim generations
     of n_sample samples
@@ -119,13 +147,16 @@ def GM_perf(data, n_components, n_sim, n_sample):
     for _ in tqdm(range(n_sim), leave=False):
         x_sim = gm.sample(n_sample)[0]
 
-        energies.append(energy_distance(x_sim, np.array(data)))
-        mean_mahala.append(cdist(x_sim, np.array(data), "mahalanobis").mean())
-        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data)))
+        if reduced : 
+            x_sim = inverse_sampling(x_sim)
+
+        energies.append(energy_distance(x_sim, np.array(data_eval)))
+        mean_mahala.append(cdist(x_sim, np.array(data_eval), "mahalanobis").mean())
+        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data_eval)))
     
     return [np.mean(energies), np.mean(mahala_to_mean), np.mean(mean_mahala)]
 
-def Vine_perf(data, mat, n_sim, n_sample):
+def Vine_perf(data, data_eval, mat, n_sim, n_sample, reduced = False):
     """
     Evaluate performances metrics for MVN generation over n_sim generations
     of n_sample samples
@@ -166,28 +197,33 @@ def Vine_perf(data, mat, n_sim, n_sample):
             [np.quantile(data.iloc[:, i], u_sim[:, i]) for i in range(0, data.shape[1])]
         ).T
 
-        energies.append(energy_distance(x_sim, np.array(data)))
-        mean_mahala.append(cdist(x_sim, np.array(data), "mahalanobis").mean())
-        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data)))
+        if reduced :
+            x_sim = inverse_sampling(x_sim)
+
+        energies.append(energy_distance(x_sim, np.array(data_eval)))
+        mean_mahala.append(cdist(x_sim, np.array(data_eval), "mahalanobis").mean())
+        mahala_to_mean.append(np.mean(mahalanobis(x=pd.DataFrame(x_sim), data=data_eval)))
     
     return [np.mean(energies), np.mean(mahala_to_mean), np.mean(mean_mahala)]
 
 if simulation : 
+    n_sim = 100
+    n_gen = 1000
     metrics = {}
 
-    metrics["MVN_raw"] = MVN_perf(X_raw, 100, 1000)
+    metrics["MVN_raw"] = MVN_perf(X_not_sampled, X_not_sampled, n_sim, n_gen)
     print("Performances MVN without Sampling : ", metrics["MVN_raw"])
-    metrics["MVN_reduced"] = MVN_perf(X_along_lines, 100, 1000)
+    metrics["MVN_reduced"] = MVN_perf(X_along_lines, X_sampled, n_sim, n_gen, reduced = True)
     print("Performances MVN with Sampling : ", metrics["MVN_reduced"], "\n")
 
-    metrics["GM_raw"] = GM_perf(X_raw, 40, 100, 1000)
+    metrics["GM_raw"] = GM_perf(X_not_sampled, X_not_sampled, 40, n_sim, n_gen)
     print("Performances GM without Sampling : ", metrics["GM_raw"])
-    metrics["GM_reduced"] = GM_perf(X_along_lines, 20, 100, 1000)
+    metrics["GM_reduced"] = GM_perf(X_along_lines, X_sampled, 20, n_sim, n_gen, reduced = True)
     print("Performances GM with Sampling : ", metrics["GM_reduced"], "\n")
 
-    metrics["Vines_raw"] = Vine_perf(X_raw, True, 100, 1000)
+    metrics["Vines_raw"] = Vine_perf(X_not_sampled, X_not_sampled, True, n_sim, n_gen)
     print("Performances Vines without Sampling : ", metrics["Vines_raw"])
-    metrics["Vines_reduced"] = Vine_perf(X_along_lines, True, 100, 1000)
+    metrics["Vines_reduced"] = Vine_perf(X_along_lines, X_sampled, True, n_sim, n_gen, reduced = True)
     print("Performances Vines with Sampling : ", metrics["Vines_reduced"], "\n")
 
     json.dump( metrics, open( "Data/metrics.json", 'w' ) )
