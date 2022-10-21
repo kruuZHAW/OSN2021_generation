@@ -1,2 +1,3 @@
-# OSN2021_generation
-Scprits and notebooks about multivariate distribution fitting for airplane trajectory generation. Work for the OSN Symposium 2021
+# OSN2021: Generation of Go-Arounds trajectories
+
+[Synthetic Aircraft Trajectories Generated with Multivariate Density Models](https://www.mdpi.com/2673-4591/13/1/7).
